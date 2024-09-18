@@ -1,0 +1,79 @@
+[project]
+name = "continuousp"
+version = "0.1.0"
+description = "ContinuouSP: Energy-Based Model for Continuous Crystal Structure Prediction"
+authors = [{ name = "tony", email = "tony998244353@gmail.com" }]
+dependencies = [
+    "wandb>=0.16.3",
+    "torch==2.2.0+cu121",
+    "numpy>=1.24.4",
+    "torch-scatter @ https://data.pyg.org/whl/torch-2.2.0%2Bcu121/torch_scatter-2.1.2%2Bpt22cu121-cp311-cp311-linux_x86_64.whl",
+    "torch-sparse @ https://data.pyg.org/whl/torch-2.2.0%2Bcu121/torch_sparse-0.6.18%2Bpt22cu121-cp311-cp311-linux_x86_64.whl",
+    "torch-geometric @ git+https://github.com/pyg-team/pytorch_geometric.git",
+    "pandas>=2.2.1",
+    "plotly>=5.20.0",
+    "pymatgen>=2024.4.13",
+    "ase>=3.22.1",
+    "dictknife>=0.14.1",
+    "python-dotenv>=1.0.1",
+    "torch_niggli @ https://github.com/packer-jp/cuda-niggli/releases/download/v0.1.0/torch_niggli-0.1.0-cp311-cp311-linux_x86_64.whl",
+]
+readme = "README.md"
+requires-python = ">=3.11,<3.12"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.rye]
+managed = true
+dev-dependencies = [
+    "ipykernel>=6.29.2",
+    "ruff>=0.2.2",
+    "pytest>=8.0.2",
+    "pre-commit>=3.6.2",
+]
+
+[[tool.rye.sources]]
+name = "torch"
+url = "https://download.pytorch.org/whl/cu121"
+type = "index"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/continuousp"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.format]
+docstring-code-format = true
+quote-style = "single"
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    "ANN1",    # missing type self and cls
+    "E999",    # syntax error
+    "UP027",   # unpacked list comprehension
+    "PT004",   # pytest missing fixture name underscore
+    "PT005",   # pytest incorrect fixture name underscore
+    "D1",      # undocumented
+    "TD001",   # invalid todo tag
+    "TD002",   # missing todo author
+    "TD003",   # missing todo link
+    "INP001",  # implicit namespace package
+    "S101",    # use of assert
+    "PLR0913", # too many arguments
+]
+unfixable = [
+    "F401",   # unused import
+    "F841",   # unused variable
+    "ERA001", # commented out code
+]
+logger-objects = ["continuousp.utils.logger.LOGGER"]
+
+[tool.ruff.lint.flake8-quotes]
+inline-quotes = "single"
