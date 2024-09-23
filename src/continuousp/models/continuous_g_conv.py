@@ -6,6 +6,8 @@ from torch_geometric.nn import (
     MessagePassing,
 )
 
+from continuousp.utils.logger import LOGGER
+
 
 class ContinuousGConv(MessagePassing):
     def __init__(self, node_dim: int, edge_dim: int) -> None:

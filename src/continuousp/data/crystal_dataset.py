@@ -2,10 +2,11 @@ from pathlib import Path
 
 import pandas as pd
 import torch
-from continuousp.data.dataset_partition import DatasetPartition
 from pymatgen.core.structure import Structure
 from torch.utils.data import Dataset
 from torch_geometric.data import Data
+
+from continuousp.data.dataset_partition import DatasetPartition
 
 
 class CrystalDataset(Dataset):
@@ -19,17 +20,17 @@ class CrystalDataset(Dataset):
             self.data_list = torch.load(path_pth)
         else:
             self.data_list = []
-            for index, row in pd.read_csv(path_csv).iterrows():
+            for row in pd.read_csv(path_csv).itertuples():
                 crystal = Structure.from_str(
-                    row['cif'],
+                    row.cif,
                     fmt='cif',
                 ).get_reduced_structure()
                 data = Data(
-                    id=torch.LongTensor([index]),
-                    cell=torch.LongTensor(crystal.atomic_numbers),
+                    cell=torch.FloatTensor(crystal.lattice.matrix).view(1, 3, 3),
                     pos=torch.FloatTensor(crystal.cart_coords),
-                    atomic_numbers=torch.FloatTensor(crystal.lattice.matrix).view(1, 3, 3),
+                    atomic_numbers=torch.LongTensor(crystal.atomic_numbers),
                     natoms=torch.LongTensor([crystal.num_sites]),
+                    composition_id=row.material_id,
                 )
                 self.data_list.append(data)
             torch.save(self.data_list, path_pth)

@@ -4,14 +4,15 @@ from collections.abc import Generator
 import numpy as np
 import torch
 import torch.nn.functional
-from continuousp.models.continuous_g_conv import ContinuousGConv
-from continuousp.models.crystals import Crystals
-from continuousp.models.gaussian_smearing import GaussianSmearing
-from continuousp.utils.logger import LOGGER
 from torch.nn.utils.parametrizations import spectral_norm
 from torch_geometric.nn import (
     global_mean_pool,
 )
+
+from continuousp.models.continuous_g_conv import ContinuousGConv
+from continuousp.models.crystals import Crystals
+from continuousp.models.gaussian_smearing import GaussianSmearing
+from continuousp.utils.logger import LOGGER
 
 
 class ContinuousEnergyPredictor(torch.nn.Module):
@@ -236,7 +237,7 @@ class ContinuousEnergyPredictor(torch.nn.Module):
             radius,
         ) = self._construct_graph(data)
         feat = torch.nn.functional.tanh(self.embedding(data.atomic_numbers - 1))
-        edge_weight = torch.cos(distance * math.pi / radius) + 1
+        edge_weight = torch.cos(distance * math.pi / radius).view(-1, 1) + 1
         edge_attr = self.distance_expansion(distance)
         for conv_layer in self.conv_layers:
             feat = conv_layer(feat, edge_index, edge_weight, edge_attr)
@@ -253,11 +254,13 @@ class ContinuousEnergyPredictor(torch.nn.Module):
         self,
         atomic_numbers: torch.Tensor,
         natoms: torch.Tensor,
+        composition_id: list[str],
     ) -> Generator[Crystals, None, None]:
         current_crystals = (
             Crystals.create_randomly(
                 atomic_numbers,
                 natoms,
+                composition_id,
                 self.expected_density,
             )
             .reduce()

@@ -2,8 +2,9 @@ from collections import defaultdict
 
 import numpy as np
 import plotly.graph_objects as go
-from continuousp.vis.atomic_colors import atomic_colors
 from pymatgen.core.structure import Structure
+
+from continuousp.vis.atomic_colors import atomic_colors
 
 
 def show_single_structure(structure: Structure) -> go.Figure:

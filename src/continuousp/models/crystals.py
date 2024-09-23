@@ -1,14 +1,14 @@
 import math
-from collections.abc import Generator
 from dataclasses import dataclass
 from functools import reduce
 from typing import Self
 
 import torch
-from continuousp.utils.frac_cart_conversion import cart_to_frac, frac_to_cart
 from pymatgen.core.structure import Structure
 from torch_niggli import niggli_reduce
 from torch_scatter import scatter
+
+from continuousp.utils.frac_cart_conversion import cart_to_frac, frac_to_cart
 
 
 @dataclass
@@ -18,11 +18,13 @@ class Crystals:
     atomic_numbers: torch.Tensor  # [num_atoms]
     natoms: torch.Tensor  # [batch_size]
     batch: torch.Tensor  # [num_atoms]
+    composition_id: list[str]
 
     @staticmethod
     def create_randomly(
         atomic_numbers: torch.Tensor,
         natoms: torch.Tensor,
+        composition_id: list[str],
         expected_density: float,
     ) -> Self:
         device = atomic_numbers.device
@@ -48,6 +50,7 @@ class Crystals:
                 natoms,
                 dim=0,
             ),
+            composition_id,
         )
 
     @staticmethod
@@ -65,8 +68,8 @@ class Crystals:
         assert positive.batch is negative.batch
         selected_cell = torch.where(condition[:, None], positive.cell, negative.cell)
         selected_pos = torch.where(condition[positive.batch], positive.pos, negative.pos)
-        selected_cell.requires_grad_(mode=True)
-        selected_pos.requires_grad_(mode=True)
+        selected_cell.requires_grad_()
+        selected_pos.requires_grad_()
         selected_cell.grad = torch.where(
             condition[:, None],
             positive.cell.grad,
@@ -83,6 +86,7 @@ class Crystals:
             positive.atomic_numbers,
             positive.natoms,
             positive.batch,
+            positive.composition_id,
         )
 
     @property
@@ -100,6 +104,7 @@ class Crystals:
             self.atomic_numbers.to(device),
             self.natoms.to(device),
             self.batch.to(device),
+            self.composition_id,
         )
 
     def detach(self) -> Self:
@@ -111,6 +116,7 @@ class Crystals:
             self.atomic_numbers,
             self.natoms,
             self.batch,
+            self.composition_id,
         )
 
     def reduce(self) -> Self:
@@ -132,19 +138,8 @@ class Crystals:
             self.atomic_numbers,
             self.natoms,
             self.batch,
+            self.composition_id,
         )
-
-    def split(self, batch_size: int) -> Generator[Self, None, None]:
-        assert self.batch_size % batch_size == 0
-        for i in range(0, self.batch_size, batch_size):
-            mask = (self.batch >= i) & (self.batch < i + batch_size)
-            yield Crystals(
-                self.cell[i : i + batch_size],
-                self.pos[mask],
-                self.atomic_numbers[mask],
-                self.natoms[i : i + batch_size],
-                self.batch[mask] - i,
-            )
 
     def transition(self, step_size: float, temp: float) -> Self:
         transitioned_cell = (
@@ -163,11 +158,12 @@ class Crystals:
             self.atomic_numbers,
             self.natoms,
             self.batch,
+            self.composition_id,
         )
 
     def require_grad(self) -> Self:
-        self.cell.requires_grad_(mode=True)
-        self.pos.requires_grad_(mode=True)
+        self.cell.requires_grad_()
+        self.pos.requires_grad_()
         return self
 
     def retain_grad(self) -> Self:
@@ -238,6 +234,7 @@ class Crystals:
                 self.atomic_numbers[self.batch == i].detach().cpu().numpy(),
                 self.pos[self.batch == i].detach().cpu().numpy(),
                 coords_are_cartesian=True,
+                properties={'id': self.composition_id[i]},
             )
             for i in range(self.batch_size)
         ]

@@ -1,6 +1,7 @@
-from continuousp.models.crystals import Crystals
 from torch_geometric.data import Batch
 from torch_geometric.data.data import BaseData
+
+from continuousp.models.crystals import Crystals
 
 
 def collate_crystals(batch: list[BaseData]) -> Crystals:
@@ -11,4 +12,5 @@ def collate_crystals(batch: list[BaseData]) -> Crystals:
         batch.atomic_numbers,
         batch.natoms,
         batch.batch,
+        batch.composition_id,
     )
