@@ -91,9 +91,11 @@ class ContinuousEnergyPredictor(torch.nn.Module):
             1,
         )
 
-    def _construct_graph(  # noqa: PLR0915
+        LOGGER.debug({'number of model parameters': sum(p.numel() for p in self.parameters())})
+
+    def _construct_graph(
         self,
-        crystal_batch: Crystals,
+        crystals: Crystals,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Construct the crystal graph.
 
@@ -107,7 +109,7 @@ class ContinuousEnergyPredictor(torch.nn.Module):
 
         THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
         """  # noqa: E501
-        num_atoms_per_image = crystal_batch.natoms
+        num_atoms_per_image = crystals.natoms
         num_atoms_per_image_sqr = (num_atoms_per_image**2).long()
 
         index_offset = torch.cumsum(num_atoms_per_image, dim=0) - num_atoms_per_image
@@ -127,80 +129,75 @@ class ContinuousEnergyPredictor(torch.nn.Module):
             index_sqr_offset,
             num_atoms_per_image_sqr,
         )
-        atom_count_sqr = (
-            torch.arange(num_atom_pairs, device=crystal_batch.device) - index_sqr_offset
-        )
+        atom_count_sqr = torch.arange(num_atom_pairs, device=crystals.device) - index_sqr_offset
 
         index1 = (
             torch.div(atom_count_sqr, num_atoms_per_image_expand, rounding_mode='floor')
         ) + index_offset_expand
         index2 = (atom_count_sqr % num_atoms_per_image_expand) + index_offset_expand
 
-        pos1 = torch.index_select(crystal_batch.pos, 0, index1)
-        pos2 = torch.index_select(crystal_batch.pos, 0, index2)
+        pos1 = torch.index_select(crystals.pos, 0, index1)
+        pos2 = torch.index_select(crystals.pos, 0, index2)
 
         cross_a2a3 = torch.cross(
-            crystal_batch.cell[:, 1],
-            crystal_batch.cell[:, 2],
+            crystals.cell[:, 1],
+            crystals.cell[:, 2],
             dim=-1,
         )
         cell_vol = torch.sum(
-            crystal_batch.cell[:, 0] * cross_a2a3,
+            crystals.cell[:, 0] * cross_a2a3,
             dim=-1,
             keepdim=True,
         )
 
-        radius = self.radius_rate * (torch.abs(cell_vol.view(-1)) / crystal_batch.natoms) ** (1 / 3)
+        radius = self.radius_rate * (torch.abs(cell_vol.view(-1)) / crystals.natoms) ** (1 / 3)
 
         inv_min_dist_a1 = torch.norm(cross_a2a3 / cell_vol, p=2, dim=-1)
         rep_a1 = torch.ceil(radius * inv_min_dist_a1)
 
         cross_a3a1 = torch.cross(
-            crystal_batch.cell[:, 2],
-            crystal_batch.cell[:, 0],
+            crystals.cell[:, 2],
+            crystals.cell[:, 0],
             dim=-1,
         )
         inv_min_dist_a2 = torch.norm(cross_a3a1 / cell_vol, p=2, dim=-1)
         rep_a2 = torch.ceil(radius * inv_min_dist_a2)
 
         cross_a1a2 = torch.cross(
-            crystal_batch.cell[:, 0],
-            crystal_batch.cell[:, 1],
+            crystals.cell[:, 0],
+            crystals.cell[:, 1],
             dim=-1,
         )
         inv_min_dist_a3 = torch.norm(cross_a1a2 / cell_vol, p=2, dim=-1)
         rep_a3 = torch.ceil(radius * inv_min_dist_a3)
 
-        max_rep = [rep_a1.max().item(), rep_a2.max().item(), rep_a3.max().item()]
+        num_cells = []
+        pbc_offsets = []
+        for i in range(crystals.batch_size):
+            unit_cell = torch.cartesian_prod(
+                torch.arange(-rep_a1[i].item(), rep_a1[i].item() + 1, device=crystals.device),
+                torch.arange(-rep_a2[i].item(), rep_a2[i].item() + 1, device=crystals.device),
+                torch.arange(-rep_a3[i].item(), rep_a3[i].item() + 1, device=crystals.device),
+            )
+            num_cells.append(len(unit_cell))
+            pbc_offsets.append(
+                torch.mm(unit_cell, crystals.cell[i]).repeat(
+                    num_atoms_per_image_sqr[i],
+                    1,
+                ),
+            )
 
-        cells_per_dim = [
-            torch.arange(-rep, rep + 1, device=crystal_batch.device, dtype=torch.float)
-            for rep in max_rep
-        ]
-        unit_cell = torch.cartesian_prod(*cells_per_dim)
-        num_cells = len(unit_cell)
-        unit_cell_per_atom = unit_cell.view(1, num_cells, 3).repeat(len(index2), 1, 1)
-        unit_cell = torch.transpose(unit_cell, 0, 1)
-        unit_cell_batch = unit_cell.view(1, 3, num_cells).expand(
-            crystal_batch.batch_size,
-            -1,
-            -1,
-        )
+        num_cells = torch.tensor(num_cells, device=crystals.device)
+        num_cells_per_atom_pair = num_cells.repeat_interleave(num_atoms_per_image_sqr)
 
-        data_cell = torch.transpose(crystal_batch.cell, 1, 2)
-        pbc_offsets = torch.bmm(data_cell, unit_cell_batch)
-        pbc_offsets_per_atom = torch.repeat_interleave(
-            pbc_offsets,
-            num_atoms_per_image_sqr,
-            dim=0,
-        )
+        pbc_offsets = torch.cat(pbc_offsets)
 
-        pos1 = pos1.view(-1, 3, 1).expand(-1, -1, num_cells)
-        pos2 = pos2.view(-1, 3, 1).expand(-1, -1, num_cells)
-        index1 = index1.view(-1, 1).repeat(1, num_cells).view(-1)
-        index2 = index2.view(-1, 1).repeat(1, num_cells).view(-1)
+        pos1 = pos1.repeat_interleave(num_cells_per_atom_pair, dim=0)
+        pos2 = pos2.repeat_interleave(num_cells_per_atom_pair, dim=0)
+        index1 = index1.repeat_interleave(num_cells_per_atom_pair)
+        index2 = index2.repeat_interleave(num_cells_per_atom_pair)
 
-        pos2 = pos2 + pbc_offsets_per_atom
+        pos2 = pos2 + pbc_offsets
 
         atom_distance_sqr = torch.sum((pos1 - pos2) ** 2, dim=1)
         atom_distance_sqr = atom_distance_sqr.view(-1)
@@ -208,7 +205,7 @@ class ContinuousEnergyPredictor(torch.nn.Module):
         radius = torch.index_select(
             radius,
             0,
-            torch.index_select(crystal_batch.batch, 0, index1),
+            torch.index_select(crystals.batch, 0, index1),
         ).view(-1)
 
         mask_within_radius = torch.le(atom_distance_sqr, radius * radius)
@@ -217,11 +214,7 @@ class ContinuousEnergyPredictor(torch.nn.Module):
         mask = torch.logical_and(mask_within_radius, mask_not_same)
         index1 = torch.masked_select(index1, mask)
         index2 = torch.masked_select(index2, mask)
-        unit_cell = torch.masked_select(
-            unit_cell_per_atom.view(-1, 3),
-            mask.view(-1, 1).expand(-1, 3),
-        )
-        unit_cell = unit_cell.view(-1, 3)
+
         atom_distance_sqr = torch.masked_select(atom_distance_sqr, mask)
         atom_distance = torch.sqrt(atom_distance_sqr)
         radius = torch.masked_select(radius, mask)
