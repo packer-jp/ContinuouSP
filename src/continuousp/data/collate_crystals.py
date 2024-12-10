@@ -13,4 +13,5 @@ def collate_crystals(batch: list[BaseData]) -> Crystals:
         batch.natoms,
         batch.batch,
         batch.composition_id,
+        batch.formation_energy_per_atom,
     )

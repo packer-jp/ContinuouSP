@@ -7,6 +7,7 @@ from torch.utils.data import Dataset
 from torch_geometric.data import Data
 
 from continuousp.data.dataset_partition import DatasetPartition
+from continuousp.utils.logger import LOGGER
 
 
 class CrystalDataset(Dataset):
@@ -24,13 +25,27 @@ class CrystalDataset(Dataset):
                 crystal = Structure.from_str(
                     row.cif,
                     fmt='cif',
-                ).get_reduced_structure()
+                )
+                # if partition == DatasetPartition.TEST:
+                #    crystal = crystal.get_primitive_structure()
+                crystal = crystal.get_reduced_structure()
                 data = Data(
-                    cell=torch.FloatTensor(crystal.lattice.matrix).view(1, 3, 3),
+                    cell=torch.FloatTensor(crystal.lattice.matrix.copy()).view(1, 3, 3),
                     pos=torch.FloatTensor(crystal.cart_coords),
                     atomic_numbers=torch.LongTensor(crystal.atomic_numbers),
                     natoms=torch.LongTensor([crystal.num_sites]),
-                    composition_id=row.material_id,
+                    composition_id=str(row.material_id),
+                    formation_energy_per_atom=torch.FloatTensor(
+                        [
+                            [
+                                row.formation_energy_per_atom
+                                if hasattr(row, 'formation_energy_per_atom')
+                                else row.heat_ref
+                                if hasattr(row, 'heat_ref')
+                                else row.energy_per_atom + 154,
+                            ],
+                        ],
+                    ),
                 )
                 self.data_list.append(data)
             torch.save(self.data_list, path_pth)

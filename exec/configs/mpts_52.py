@@ -1,6 +1,7 @@
 config = {
     'training': {
-        'dataset': 'mp_20',
+        'dataset': 'mpts_52',
+        'num_epochs': 3,
     },
     'model': {
         'atom_embedding_size': 64,

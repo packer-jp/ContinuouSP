@@ -1,6 +1,7 @@
 config = {
     'training': {
         'dataset': 'perov_5',
+        'num_epochs': 5,
     },
     'model': {
         'atom_embedding_size': 32,

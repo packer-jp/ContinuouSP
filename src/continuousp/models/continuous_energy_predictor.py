@@ -135,7 +135,6 @@ class ContinuousEnergyPredictor(torch.nn.Module):
             torch.div(atom_count_sqr, num_atoms_per_image_expand, rounding_mode='floor')
         ) + index_offset_expand
         index2 = (atom_count_sqr % num_atoms_per_image_expand) + index_offset_expand
-
         pos1 = torch.index_select(crystals.pos, 0, index1)
         pos2 = torch.index_select(crystals.pos, 0, index2)
 
@@ -201,7 +200,6 @@ class ContinuousEnergyPredictor(torch.nn.Module):
 
         atom_distance_sqr = torch.sum((pos1 - pos2) ** 2, dim=1)
         atom_distance_sqr = atom_distance_sqr.view(-1)
-
         radius = torch.index_select(
             radius,
             0,
@@ -223,25 +221,30 @@ class ContinuousEnergyPredictor(torch.nn.Module):
 
         return edge_index, atom_distance, radius
 
-    def forward(self, data: Crystals) -> torch.Tensor:
+    def forward(self, crystals: Crystals) -> torch.Tensor:
         (
             edge_index,
             distance,
             radius,
-        ) = self._construct_graph(data)
-        feat = torch.nn.functional.tanh(self.embedding(data.atomic_numbers - 1))
+        ) = self._construct_graph(crystals)
+        feat = torch.nn.functional.tanh(self.embedding(crystals.atomic_numbers - 1))
         edge_weight = torch.cos(distance * math.pi / radius).view(-1, 1) + 1
         edge_attr = self.distance_expansion(distance)
         for conv_layer in self.conv_layers:
             feat = conv_layer(feat, edge_index, edge_weight, edge_attr)
             feat = torch.nn.functional.softplus(feat)
-        feat = global_mean_pool(feat, data.batch)
+        feat = global_mean_pool(feat, crystals.batch)
         for fc_layer in self.fc_layers:
             feat = fc_layer(feat)
             feat = torch.nn.functional.softplus(feat)
-        result = self.fc_final(feat)
-        density = (data.natoms / torch.abs(torch.linalg.det(data.cell))).view(-1, 1)
-        return result + self.energy_penalty * (torch.log(density / self.expected_density)) ** 2
+        return self.fc_final(feat)
+
+    def energy_with_penalty(self, crystals: Crystals) -> torch.Tensor:
+        density = (crystals.natoms / torch.abs(torch.linalg.det(crystals.cell))).view(-1, 1)
+        return (
+            self.forward(crystals)
+            + self.energy_penalty * (torch.log(density / self.expected_density)) ** 2
+        )
 
     def generate(
         self,
@@ -261,7 +264,7 @@ class ContinuousEnergyPredictor(torch.nn.Module):
         )
 
         self.zero_grad()
-        current_energy = self.forward(current_crystals)
+        current_energy = self.energy_with_penalty(current_crystals)
 
         current_energy.sum().backward()
         yield current_crystals.detach()
@@ -278,7 +281,7 @@ class ContinuousEnergyPredictor(torch.nn.Module):
                 transitioned_crystals_reduced = transitioned_crystals.reduce().retain_grad()
             with torch.cuda.nvtx.range('forward'):
                 self.zero_grad()
-                transitioned_energy = self.forward(transitioned_crystals_reduced)
+                transitioned_energy = self.energy_with_penalty(transitioned_crystals_reduced)
             with torch.cuda.nvtx.range('backward'):
                 transitioned_energy.sum().backward()
             with torch.cuda.nvtx.range('rest'):

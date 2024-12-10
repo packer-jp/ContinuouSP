@@ -1,8 +1,7 @@
 config = {
     'training': {
-        'batch_size': 32,
+        'batch_size': 128,
         'learning_rate': 0.001,
-        'num_epochs': 1000,
         'save_every': 1,
         'regularization_lambda': 0.1,
     },

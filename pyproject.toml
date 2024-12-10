@@ -11,12 +11,14 @@ dependencies = [
     "torch-sparse @ https://data.pyg.org/whl/torch-2.2.0%2Bcu118/torch_sparse-0.6.18%2Bpt22cu118-cp311-cp311-linux_x86_64.whl",
     "torch-geometric @ git+https://github.com/pyg-team/pytorch_geometric.git",
     "pandas>=2.2.1",
-    "plotly>=5.20.0",
     "pymatgen>=2024.4.13",
     "ase>=3.22.1",
     "dictknife>=0.14.1",
     "python-dotenv>=1.0.1",
     "torch-niggli @ git+https://github.com/packer-jp/cuda-niggli.git",
+    "plotly>=5.24.1",
+    "kaleido>=0.2.1",
+    "inflect>=7.4.0",
 ]
 readme = "README.md"
 requires-python = ">=3.11,<3.12"
@@ -67,6 +69,9 @@ ignore = [
     "INP001",  # implicit namespace package
     "S101",    # use of assert
     "PLR0913", # too many arguments
+    "PLW2901", # redefined loop name
+    "G004",    # logging f string
+    "S311",    # suspicious non cryptographic random usage
 ]
 unfixable = [
     "F401",   # unused import

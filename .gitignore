@@ -179,7 +179,7 @@ espresso.*
 misc/
 notebooks/
 nsys/
-scripts/
+exec/
 
 # Others
 .old_git/

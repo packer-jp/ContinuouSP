@@ -6,25 +6,19 @@ from torch_geometric.nn import (
     MessagePassing,
 )
 
-from continuousp.utils.logger import LOGGER
-
 
 class ContinuousGConv(MessagePassing):
     def __init__(self, node_dim: int, edge_dim: int) -> None:
         super().__init__()
         self.node_feat_size = node_dim
         self.edge_feat_size = edge_dim
-        self.lin1 = spectral_norm(
-            nn.Linear(
-                self.node_feat_size,
-                2 * self.node_feat_size,
-            ),
+        self.lin1 = nn.Linear(
+            self.node_feat_size,
+            2 * self.node_feat_size,
         )
-        self.lin2 = spectral_norm(
-            nn.Linear(
-                self.node_feat_size,
-                2 * self.node_feat_size,
-            ),
+        self.lin2 = nn.Linear(
+            self.node_feat_size,
+            2 * self.node_feat_size,
         )
         self.lin3 = nn.Linear(
             self.edge_feat_size,

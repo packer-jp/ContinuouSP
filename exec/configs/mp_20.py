@@ -1,6 +1,7 @@
 config = {
     'training': {
-        'dataset': 'carbon_24',
+        'dataset': 'mp_20',
+        'num_epochs': 5,
     },
     'model': {
         'atom_embedding_size': 32,

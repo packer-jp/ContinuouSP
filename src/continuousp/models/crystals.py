@@ -19,6 +19,7 @@ class Crystals:
     natoms: torch.Tensor  # [batch_size]
     batch: torch.Tensor  # [num_atoms]
     composition_id: list[str]
+    formation_energy_per_atom: torch.Tensor | None
 
     @staticmethod
     def create_randomly(
@@ -51,6 +52,7 @@ class Crystals:
                 dim=0,
             ),
             composition_id,
+            None,
         )
 
     @staticmethod
@@ -67,7 +69,11 @@ class Crystals:
         assert positive.natoms is negative.natoms
         assert positive.batch is negative.batch
         selected_cell = torch.where(condition[:, None], positive.cell, negative.cell)
-        selected_pos = torch.where(condition[positive.batch], positive.pos, negative.pos)
+        selected_pos = torch.where(
+            condition[positive.batch],
+            positive.pos,
+            negative.pos,
+        )
         selected_cell.requires_grad_()
         selected_pos.requires_grad_()
         selected_cell.grad = torch.where(
@@ -87,6 +93,7 @@ class Crystals:
             positive.natoms,
             positive.batch,
             positive.composition_id,
+            positive.formation_energy_per_atom,
         )
 
     @property
@@ -105,18 +112,22 @@ class Crystals:
             self.natoms.to(device),
             self.batch.to(device),
             self.composition_id,
+            self.formation_energy_per_atom.to(device)
+            if self.formation_energy_per_atom is not None
+            else None,
         )
 
     def detach(self) -> Self:
-        detached_cell = self.cell.detach()
-        detached_pos = self.pos.detach()
         return Crystals(
-            detached_cell,
-            detached_pos,
+            self.cell.detach(),
+            self.pos.detach(),
             self.atomic_numbers,
             self.natoms,
             self.batch,
             self.composition_id,
+            self.formation_energy_per_atom.detach()
+            if self.formation_energy_per_atom is not None
+            else None,
         )
 
     def reduce(self) -> Self:
@@ -139,6 +150,7 @@ class Crystals:
             self.natoms,
             self.batch,
             self.composition_id,
+            self.formation_energy_per_atom,
         )
 
     def transition(self, step_size: float, temp: float) -> Self:
@@ -159,6 +171,7 @@ class Crystals:
             self.natoms,
             self.batch,
             self.composition_id,
+            self.formation_energy_per_atom,
         )
 
     def require_grad(self) -> Self:
@@ -209,8 +222,9 @@ class Crystals:
             .eq(torch.arange(max_atomic_number + 1, device=self.device).view(1, -1))
             .long(),
         )
-        natoms = torch.sum(count, dim=1)
-        count //= reduce(torch.gcd, count.t()).view(-1, 1) * (
+
+        count //= reduce(torch.gcd, count.t()).view(-1, 1)
+        count *= (
             torch.distributions.Geometric(p)
             .sample([self.batch_size, 1])
             .to(self.device)
@@ -219,22 +233,26 @@ class Crystals:
             + 1
         )
 
-        batch_unique, atom_numbers_unique = torch.where(count > 0)
+        batch_unique, atomic_numbers_unique = torch.where(count > 0)
         atomic_numbers = torch.repeat_interleave(
-            atom_numbers_unique,
-            count[batch_unique, atom_numbers_unique],
+            atomic_numbers_unique,
+            count[batch_unique, atomic_numbers_unique],
         )
         natoms = torch.sum(count, dim=1)
         return atomic_numbers, natoms
 
-    def to_pymatgen_structures(self) -> list[Structure]:
+    def to_pymatgen_structures(
+        self,
+        energy: torch.Tensor | None = None,
+    ) -> list[Structure]:
         return [
             Structure(
                 self.cell[i].detach().cpu().numpy(),
                 self.atomic_numbers[self.batch == i].detach().cpu().numpy(),
                 self.pos[self.batch == i].detach().cpu().numpy(),
                 coords_are_cartesian=True,
-                properties={'id': self.composition_id[i]},
+                properties={'composition_id': self.composition_id[i]}
+                | ({'energy': energy[i].item()} if energy is not None else {}),
             )
             for i in range(self.batch_size)
         ]
