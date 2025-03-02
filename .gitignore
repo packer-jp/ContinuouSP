@@ -170,7 +170,6 @@ eval*.sh
 *.out
 *.err
 .d*
-snapshots/
 tmp/
 configs/sweep.yaml
 profiles/
@@ -182,4 +181,3 @@ nsys/
 
 # Others
 .old_git/
-*.pth
