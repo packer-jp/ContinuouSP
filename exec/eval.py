@@ -154,7 +154,7 @@ if __name__ == '__main__':
     parser.add_argument('train_run_id')
     parser.add_argument('batch_size', type=int)
     parser.add_argument('num_samples', type=int)
-    parser.add_argument('num_test_data', type=int, default=-1)
+    parser.add_argument('num_test_data', type=int, nargs='?', default=-1)
     args = parser.parse_args()
     main(
         args.run_name,

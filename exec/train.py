@@ -40,8 +40,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('run_name')
     parser.add_argument('config_name')
-    parser.add_argument('num_train_data', type=int)
-    parser.add_argument('num_valid_data', type=int)
+    parser.add_argument('num_train_data', type=int, nargs='?', default=-1)
+    parser.add_argument('num_valid_data', type=int, nargs='?', default=-1)
     parser.add_argument('pretrain_run_id', type=str, nargs='?', default=None)
     args = parser.parse_args()
 

@@ -1,11 +1,11 @@
-from collections import defaultdict
-from collections.abc import Generator
+from collections.abc import Iterator
 from pathlib import Path
 
 import numpy as np
 import plotly.graph_objects as go
 import torch
 from pymatgen.analysis.structure_matcher import StructureMatcher
+from pymatgen.core.structure import Structure
 from shared.should_save import should_save
 from torch.utils.data import Subset
 from torch.utils.data.dataloader import DataLoader
@@ -28,13 +28,14 @@ class Tester:
         config: dict,
         num_test_data: int,
         device: torch.device,
+        shuffle: bool = False,
     ) -> None:
         self.model = ContinuousEnergyPredictor(**config['model']).to(device)
         self.model.eval()
 
         test_dataset = CrystalDataset(
             dataset=config['training']['dataset'],
-            partition=DatasetPartition.TRAIN,
+            partition=DatasetPartition.TEST,
         )
         if num_test_data != -1:
             test_dataset = Subset(test_dataset, range(num_test_data))
@@ -42,7 +43,7 @@ class Tester:
         self.test_data_loader = DataLoader(
             test_dataset,
             batch_size=config['testing']['batch_size'],
-            shuffle=False,
+            shuffle=shuffle,
             collate_fn=collate_crystals,
         )
 
@@ -70,7 +71,8 @@ class Tester:
         snapshot = torch.load(self.snapshot_path)
         self.model.load_state_dict(snapshot['MODEL_STATE'])
 
-    def get_rms_dists(self) -> Generator[float | None, None, None]:
+    def get_rms_dists(self) -> Iterator[float | None]:
+        matcher = StructureMatcher(stol=0.5, angle_tol=10, ltol=0.3)
         for known_crystals in self.test_data_loader:
             known_crystals = known_crystals.to(self.device)
             known_pymatgen_structures = known_crystals.to_pymatgen_structures()
@@ -81,7 +83,6 @@ class Tester:
                     known_crystals.composition_id,
                 ),
             )[-1].to_pymatgen_structures()
-            matcher = StructureMatcher(stol=0.5, angle_tol=10, ltol=0.3)
             for known_pymatgen_structure, generated_pymatgen_structure in zip(
                 known_pymatgen_structures,
                 generated_pymatgen_structures,
@@ -92,6 +93,54 @@ class Tester:
                     generated_pymatgen_structure,
                 )
                 yield None if rms_dist is None else rms_dist[0]
+
+    def get_cifs(self) -> Iterator[tuple[str, str]]:
+        for known_crystals in self.test_data_loader:
+            known_crystals = known_crystals.to(self.device)
+            known_pymatgen_structures = known_crystals.to_pymatgen_structures()
+            generated_pymatgen_structures = list(
+                self.model.generate(
+                    known_crystals.atomic_numbers,
+                    known_crystals.natoms,
+                    known_crystals.composition_id,
+                ),
+            )[-1].to_pymatgen_structures()
+            for known_pymatgen_structure, generated_pymatgen_structure in zip(
+                known_pymatgen_structures,
+                generated_pymatgen_structures,
+                strict=True,
+            ):
+                yield (
+                    known_pymatgen_structure.to(fmt='cif'),
+                    generated_pymatgen_structure.to(fmt='cif'),
+                )
+
+    def get_traj_filtered(self) -> Iterator[Iterator[Structure]]:
+        matcher = StructureMatcher(stol=0.5, angle_tol=10, ltol=0.3)
+        for known_crystals in self.test_data_loader:
+            known_crystals = known_crystals.to(self.device)
+            known_pymatgen_structures = known_crystals.to_pymatgen_structures()
+            generated_pymatgen_structures_list = [
+                crystals.to_pymatgen_structures()
+                for crystals in self.model.generate(
+                    known_crystals.atomic_numbers,
+                    known_crystals.natoms,
+                    known_crystals.composition_id,
+                )
+            ]
+            generated_pymatgen_structures_list = list(
+                map(list, zip(*generated_pymatgen_structures_list, strict=False)),
+            )
+            for known_pymatgen_structure, generated_pymatgen_structures in zip(
+                known_pymatgen_structures,
+                generated_pymatgen_structures_list,
+                strict=True,
+            ):
+                if matcher.get_rms_dist(
+                    known_pymatgen_structure,
+                    generated_pymatgen_structures[-1],
+                ):
+                    yield iter(generated_pymatgen_structures)
 
     def step_vs_energy_and_structure(self) -> None:
         for known_crystals in self.test_data_loader:
