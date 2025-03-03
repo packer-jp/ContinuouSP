@@ -1,4 +1,7 @@
-# ContinuouSP
+# ContinuouSP: Generative Model for Crystal Structure Prediction with Invariance and Continuity
+
+## [Paper](https://arxiv.org/abs/2502.02026)
+
 ## Setup
 We adopt [Rye](https://rye-up.com/) for project/package management. Please follow the instructions in the link to install Rye, and then run the following command to create a virtual environment under `.venv`:
 
